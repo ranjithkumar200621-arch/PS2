@@ -81,16 +81,18 @@ class MainActivity : ComponentActivity() {
         var settings by remember { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
+        // New or edited input invalidates any earlier local result, reviewed query and server response.
+        LaunchedEffect(incoming.value) { result = null; query = ""; kind = "claim"; response = "" }
         LaunchedEffect(Unit) { history = withContext(Dispatchers.IO) { Store.get(this@MainActivity).findings().recent() } }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("PS2", style = MaterialTheme.typography.headlineLarge)
             Text("GOD VALLEY · Protection on your phone")
             Text("Offline screening is available. AI detection and online evidence need additional setup. A warning is advice, not proof of fraud.")
             Text("Notification access exposes available previews from apps you select. PS2 processes them locally and stores reasons for 7 days. Hidden or muted previews may be missed.")
-            Row { Checkbox(enabled, { enabled = it; prefs.edit().putBoolean("enabled", it).apply() }); Text("Enable local monitoring") }
+            Row { Checkbox(enabled, { enabled = it; prefs.edit().putBoolean("enabled", it).also { e -> if (it) e.putLong("since", System.currentTimeMillis()) }.apply() }); Text("Enable local monitoring") }
             listOf("WhatsApp" to "com.whatsapp", "Telegram" to "org.telegram.messenger", "Google Messages" to "com.google.android.apps.messaging", "Samsung Messages" to "com.samsung.android.messaging").forEach { (name, pkg) ->
                 var checked by remember { mutableStateOf(prefs.getBoolean(pkg, false)) }
-                Row { Checkbox(checked, { checked = it; prefs.edit().putBoolean(pkg, it).apply() }); Text(name) }
+                Row { Checkbox(checked, { checked = it; prefs.edit().putBoolean(pkg, it).also { e -> if (it) e.putLong("since", System.currentTimeMillis()) }.apply() }); Text(name) }
             }
             Button(onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Grant notification access") }
             Button(onClick = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Allow warning notifications") }
@@ -102,7 +104,11 @@ class MainActivity : ComponentActivity() {
                 kind = if (url == null) "claim" else "url"
                 query = url ?: Detection.redact(incoming.value)
             }) { Text("Check locally") }
-            result?.let { Text(it.verdict, style = MaterialTheme.typography.headlineSmall); Text(it.reasons.joinToString("\n")); Text(it.advice) }
+            result?.let {
+                Text(if (it.clean) "No suspicious signals detected" else it.verdict, style = MaterialTheme.typography.headlineSmall)
+                if (!it.clean) Text(it.reasons.joinToString("\n"))
+                Text(it.advice)
+            }
             Text("Optional online verification", style = MaterialTheme.typography.titleLarge)
             Text(if (endpoint.isBlank()) "Online verification is not connected. Local checks work without it." else "Online verification configured for this session.")
             TextButton(onClick = { settings = !settings }) { Text("Connection settings") }

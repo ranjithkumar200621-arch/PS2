@@ -3,8 +3,9 @@ package com.godvalley.ps2
 import android.net.Uri
 import java.text.Normalizer
 
-data class Result(val verdict: String, val reasons: List<String>, val advice: String)
+data class Result(val verdict: String, val reasons: List<String>, val advice: String, val clean: Boolean = false)
 object Detection {
+    fun rank(verdict: String) = when (verdict) { "High Risk" -> 2; "Suspicious" -> 1; else -> 0 }
     private val groups = listOf(
         "Urgency or threat" to Regex("urgent|immediately|blocked|arrest|digital arrest|parcel detained|உடனே|முடக்க|avasaram|udanadi|block aag", RegexOption.IGNORE_CASE),
         "Sensitive information request" to Regex("\\bkyc\\b|\\botp\\b|password|\\bpin\\b|கடவுச்சொல்|ரகசிய|ragasiya", RegexOption.IGNORE_CASE),
@@ -30,6 +31,7 @@ object Detection {
         val reasons = groups.filter { it.second.containsMatchIn(text) }.map { it.first }.toMutableList()
         if (urls(text).isNotEmpty()) reasons += "Contains a web link"
         val risk = when { reasons.size >= 3 -> "High Risk"; reasons.size >= 2 -> "Suspicious"; else -> "Unverified" }
-        return Result(risk, reasons.ifEmpty { listOf("No rule matched. Model and factual verification unavailable locally.") }, "Verify through the official app or website. Never disclose OTP or PIN. Rules can miss scams and flag legitimate messages.")
+        if (reasons.isEmpty()) return Result(risk, listOf("No suspicious signals detected"), "This does not prove the message is safe. Only simple rules ran; no trained model or fact check is available on this device. Verify anything unexpected through the official app or website.", clean = true)
+        return Result(risk, reasons, "Verify through the official app or website. Never disclose OTP or PIN. Rules can miss scams and flag legitimate messages.")
     }
 }

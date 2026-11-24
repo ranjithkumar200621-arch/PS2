@@ -2,6 +2,7 @@ package com.godvalley.ps2
 
 import android.app.*
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -34,26 +35,65 @@ class Retention(c: Context, p: WorkerParameters) : CoroutineWorker(c, p) {
         return androidx.work.ListenableWorker.Result.success()
     }
 }
+/** Ledger storage in app-private preferences: salted digests and timestamps only, never message text. */
+class PrefsLedgerStore(private val prefs: SharedPreferences) : LedgerStore {
+    override var salt: String
+        get() = prefs.getString("ledger_salt", null) ?: ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }.also { prefs.edit().putString("ledger_salt", it).apply() }
+        set(v) { prefs.edit().putString("ledger_salt", v).apply() }
+    override var since: Long
+        get() = prefs.getLong("since", 0L)
+        set(v) { prefs.edit().putLong("since", v).apply() }
+    override fun load(): Map<String, Long> = (prefs.getString("ledger", "") ?: "").lineSequence()
+        .mapNotNull { it.split(',').takeIf { p -> p.size == 2 }?.let { p -> p[1].toLongOrNull()?.let { t -> p[0] to t } } }.toMap()
+    override fun save(entries: Map<String, Long>) {
+        prefs.edit().putString("ledger", entries.entries.joinToString("\n") { "${it.key},${it.value}" }).apply()
+    }
+}
 class Protection : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val seen = linkedMapOf<String, Long>()
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val prefs = getSharedPreferences("ps2", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("enabled", false) || !prefs.getBoolean(sbn.packageName, false)) return
+    private val prefs by lazy { getSharedPreferences("ps2", Context.MODE_PRIVATE) }
+    private val ledger by lazy { MessageLedger(PrefsLedgerStore(prefs)) }
+    private fun active(pkg: String) = prefs.getBoolean("enabled", false) && prefs.getBoolean(pkg, false)
+
+    /** Permission revoked or listener unbound: anything that arrives later must not make old history look new. */
+    override fun onListenerDisconnected() { prefs.edit().putBoolean("gap", true).apply(); ledger.rebase() }
+    override fun onListenerConnected() { ledger.rebase(); prefs.edit().putBoolean("gap", false).apply() }
+
+    /** Extract structured MessagingStyle messages, or one current plain-text fallback. */
+    private fun extract(sbn: StatusBarNotification): List<Incoming> {
         val n = sbn.notification
-        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        val content = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
-            ?: n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
-        val key = sbn.key + content.hashCode()
-        val now = System.currentTimeMillis()
-        synchronized(seen) {
-            if (now - (seen[key] ?: 0) < 60000) return
-            seen[key] = now
-            if (seen.size > 100) seen.remove(seen.keys.first())
+        if (NotificationContent.isGroupSummary(n.flags)) return emptyList()
+        NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)?.let { style ->
+            val self = style.user
+            return style.messages.mapNotNull { m ->
+                val person = m.person
+                val text = m.text?.toString()?.trim()?.take(2000)
+                if (text.isNullOrBlank() || person == null || person === self) return@mapNotNull null
+                if (person.key == style.user.key && style.user.key != null) return@mapNotNull null
+                val sender = person.key ?: person.name?.toString()?.take(200) ?: "unknown"
+                val conversation = sbn.notification.getGroup() ?: sbn.packageName + "/" + sbn.key
+                val timestamp = m.timestamp.takeIf { it > 0L } ?: 0L
+                Incoming(conversation, timestamp, sender, text)
+            }
         }
+        val textLines = n.extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            ?.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotBlank) }
+        val text = NotificationContent.latestPlainText(
+            latest = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+            textLines = textLines
+        )
+        val conversation = n.getGroup()?.takeIf { it.isNotBlank() } ?: sbn.packageName + "/" + sbn.key
+        return if (text.isNullOrBlank()) emptyList() else listOf(Incoming(conversation, 0L, "plain", text))
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (!active(sbn.packageName)) return
+        val items = extract(sbn)
+        if (items.isEmpty()) return
+        val now = System.currentTimeMillis()
         scope.launch {
-            if (!prefs.getBoolean("enabled", false) || !prefs.getBoolean(sbn.packageName, false)) return@launch
-            val r = Detection.analyze(content)
+            val r = Screening.process(ledger, items, active(sbn.packageName)) ?: return@launch
             if (r.verdict !in listOf("Suspicious", "High Risk")) return@launch
             Store.get(this@Protection).findings().add(Finding(time = now, verdict = r.verdict, reasons = r.reasons.joinToString("; ")))
             val manager = getSystemService(NotificationManager::class.java)
@@ -66,5 +106,10 @@ class Protection : NotificationListenerService() {
             try { NotificationManagerCompat.from(this@Protection).notify(sbn.key.hashCode(), alert) } catch (_: SecurityException) { }
         }
     }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        try { NotificationManagerCompat.from(this).cancel(sbn.key.hashCode()) } catch (_: SecurityException) { }
+    }
+
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 }
