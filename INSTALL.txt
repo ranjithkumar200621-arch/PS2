@@ -1,0 +1,14 @@
+PS2 — GOD VALLEY
+
+1. Copy PS2.apk to an Android phone running Android 8 or newer.
+2. Open it in Files and permit installation from that source if prompted.
+3. Open PS2. Select the messaging apps you use and enable local monitoring.
+4. Tap Grant notification access and enable PS2 in Android settings.
+5. Return to PS2 and allow warning notifications.
+6. Share text or a screenshot/QR image to PS2 for an on-demand check.
+
+Some Android versions restrict notification access for sideloaded apps. If Android offers “Allow restricted settings” on PS2's App info page, enable it only after confirming this is the APK you intended to install.
+
+The app works locally without a server. Online verification is unavailable until a backend and its evidence providers are configured. This build uses rules, not a validated AI model. No detected signal does not mean a message is safe.
+
+This is an initial test build, not the complete feature set or a measured accuracy result. Test on non-sensitive example messages before relying on warnings. Hidden previews and unsupported messaging applications are not covered.
