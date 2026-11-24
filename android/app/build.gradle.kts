@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.godvalley.ps2"
     compileSdk = 35
-    defaultConfig { applicationId = "com.godvalley.ps2"; minSdk = 26; targetSdk = 35; versionCode = 2; versionName = "0.2.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "com.godvalley.ps2"; minSdk = 26; targetSdk = 35; versionCode = 3; versionName = "0.2.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

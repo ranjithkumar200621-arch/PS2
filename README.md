@@ -1,3 +1,9 @@
+## Version 0.2.1 verification update
+
+The backend now retrieves RDAP domain registration dates from registry endpoints in a bundled IANA bootstrap snapshot. It does not visit the submitted website. COM/NET subdomains resolve to their registry domain; other suffixes use the exact submitted host and may return unavailable. Dates never change a fraud verdict. Registry requests are limited to two seconds and evidence responses to 256 KiB. Redirects are rejected. The Android result screen displays the available dates and limitations.
+
+Nine backend tests passed, and an actual example.com lookup returned registration data. Deployment and Google Web Risk/Fact Check/Gemini credentials remain unconfigured. No claim of production readiness or achieved model accuracy is made.
+
 ## Version 0.2 update
 
 Warnings now identify the source app, sender and exact message. Each alert opens its own record. Flagged text and sender information are encrypted with Android Keystore and retained locally for seven days, with deletion and local false-positive feedback. History migrates from version 0.1. Structured notification messages are processed individually with persistent duplicate fingerprints; expanded history is not concatenated. Fallback notifications without structured messages have reduced coverage.

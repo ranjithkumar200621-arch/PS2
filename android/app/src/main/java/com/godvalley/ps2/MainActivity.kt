@@ -182,6 +182,12 @@ class MainActivity : ComponentActivity() {
                                     buildString {
                                         appendLine(data.optString("verdict", "Unverified"))
                                         appendLine(data.optString("reason"))
+                                        data.optJSONObject("domain_evidence")?.let { domain ->
+                                            appendLine("Domain: ${domain.optString("domain")}")
+                                            appendLine(domain.optString("reason"))
+                                            val dates = domain.optJSONArray("events")
+                                            if (dates != null) for (j in 0 until dates.length()) { val event = dates.getJSONObject(j); appendLine("${event.optString("event")}: ${event.optString("date")}") }
+                                        }
                                         val evidence = data.optJSONArray("evidence")
                                         if (evidence != null) for (i in 0 until evidence.length()) {
                                             val item = evidence.optJSONObject(i)

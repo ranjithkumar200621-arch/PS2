@@ -9,6 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
+from evidence import domain_evidence, bounded_json
 
 app = FastAPI(title="PS2 evidence verification", docs_url=None, redoc_url=None)
 
@@ -40,7 +41,7 @@ def public_url(value: str) -> str:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "not integrated", "raw_notification_storage": False}
+    return {"status": "ok", "model": "on-device advisory model; server does not classify messages", "raw_notification_storage": False}
 
 
 @app.post("/verify")
@@ -53,24 +54,23 @@ async def verify(body: Query, authorization: str = Header(default="")):
             async with httpx.AsyncClient(timeout=7, follow_redirects=False, trust_env=False) as client:
                 if body.kind == "url":
                     url = public_url(body.query)
+                    registry = await domain_evidence(client, url)
                     key = os.getenv("WEB_RISK_API_KEY")
                     if not key:
-                        return {"verdict": "Unverified", "reason": "Web Risk provider not configured"}
-                    r = await client.get("https://webrisk.googleapis.com/v1/uris:search", params={
+                        return {"verdict": "Unverified", "reason": "URL reputation provider not configured. Registry information alone cannot establish safety.", "domain_evidence": registry}
+                    record = await bounded_json(client, "https://webrisk.googleapis.com/v1/uris:search", params={
                         "uri": url, "key": key, "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]})
-                    r.raise_for_status()
-                    threats = r.json().get("threat", {}).get("threatTypes", [])
+                    threats = record.get("threat", {}).get("threatTypes", [])
                     return {"verdict": "High Risk" if threats else "Unverified", "evidence": threats,
-                            "source": "Google Web Risk", "reason": "No listing does not prove safety" if not threats else "Threat listing found"}
+                            "source": "Google Web Risk", "domain_evidence": registry, "reason": "No listing does not prove safety" if not threats else "Threat listing found"}
                 key = os.getenv("FACT_CHECK_API_KEY")
                 if not key:
                     return {"verdict": "Unverified", "reason": "Fact Check provider not configured"}
-                r = await client.get("https://factchecktools.googleapis.com/v1alpha1/claims:search", params={"query": body.query, "key": key, "pageSize": 5})
-                r.raise_for_status()
+                record = await bounded_json(client, "https://factchecktools.googleapis.com/v1alpha1/claims:search", params={"query": body.query, "key": key, "pageSize": 5})
                 evidence = [{"claim": c.get("text", "")[:1000], "reviews": [
                     {"publisher": v.get("publisher", {}).get("name"), "url": v.get("url"),
                      "rating": v.get("textualRating"), "date": v.get("reviewDate")}
-                    for v in c.get("claimReview", [])[:3]]} for c in r.json().get("claims", [])[:5]]
+                    for v in c.get("claimReview", [])[:3]]} for c in record.get("claims", [])[:5]]
                 return {"verdict": "Unverified", "evidence": evidence,
                         "reason": "Retrieved candidates require matching claim, date and context. Retrieval alone does not settle the claim."}
     except (httpx.HTTPError, TimeoutError, ValueError):
