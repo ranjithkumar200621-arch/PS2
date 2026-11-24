@@ -49,7 +49,7 @@ cd android
 
 The replacement test APK is `android/app/build/outputs/apk/debug/app-debug.apk` (73 MB). It is V2-signed with the Android debug certificate and is not a production-signed release.
 
-SHA-256: `05b4c141f651330f85ba432012299587c398387305ab7e4d54313930ff795f9`
+SHA-256: `05b4c141f651330f85ba432012299587c398387305ab7be1d54313930ff795f9`
 
 Install only after confirming upgrade compatibility with the existing debug package. A release APK requires a separately secured signing key outside this repository.
 
