@@ -32,16 +32,22 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     private val incoming = mutableStateOf("")
+    private val selectedId = mutableStateOf(0L)
+    private val accessGranted = mutableStateOf(false)
+    override fun onResume() { super.onResume(); accessGranted.value = packageName in androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(this) }
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        val prefs = getSharedPreferences("ps2", MODE_PRIVATE)
+        if (!prefs.contains("monitorSince")) prefs.edit().putLong("monitorSince", System.currentTimeMillis()).apply()
         receive(intent)
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork("retention", ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<Retention>(1, TimeUnit.DAYS).build())
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("retention", ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<Retention>(1, TimeUnit.HOURS).build())
         setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFA6E887), background = Color(0xFF081924), surface = Color(0xFF102735))) { Surface { App() } } }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); receive(intent) }
     private fun receive(i: Intent) {
+        selectedId.value = i.getLongExtra("findingId", 0L)
         if (i.action != Intent.ACTION_SEND) return
         incoming.value = i.getStringExtra(Intent.EXTRA_TEXT)?.take(8000) ?: ""
         val uri = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
@@ -72,7 +78,12 @@ class MainActivity : ComponentActivity() {
         val prefs = remember { getSharedPreferences("ps2", MODE_PRIVATE) }
         var enabled by remember { mutableStateOf(prefs.getBoolean("enabled", false)) }
         var result by remember { mutableStateOf<Result?>(null) }
-        var history by remember { mutableStateOf(emptyList<Finding>()) }
+        val dao = remember { Store.get(this@MainActivity).findings() }
+        val historyFlow = remember { dao.recent(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)) }
+        val history by historyFlow.collectAsState(initial = emptyList())
+        var selected by remember { mutableStateOf<Finding?>(null) }
+        var screen by remember { mutableStateOf("Messages") }
+        var checking by remember { mutableStateOf(false) }
         var endpoint by remember { mutableStateOf("") }
         var token by remember { mutableStateOf("") }
         var query by remember { mutableStateOf("") }
@@ -81,28 +92,58 @@ class MainActivity : ComponentActivity() {
         var settings by remember { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
-        LaunchedEffect(Unit) { history = withContext(Dispatchers.IO) { Store.get(this@MainActivity).findings().recent() } }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        LaunchedEffect(selectedId.value, history) {
+            selected = if (selectedId.value > 0) dao.get(selectedId.value)?.takeIf { it.time >= System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7) } else null
+            if (selectedId.value > 0) screen = "Messages"
+        }
+        LaunchedEffect(incoming.value) { result = null; response = ""; if (incoming.value.isNotBlank()) screen = "Check" }
+        Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("PS2", style = MaterialTheme.typography.headlineLarge)
             Text("GOD VALLEY · Protection on your phone")
-            Text("Offline screening is available. AI detection and online evidence need additional setup. A warning is advice, not proof of fraud.")
-            Text("Notification access exposes available previews from apps you select. PS2 processes them locally and stores reasons for 7 days. Hidden or muted previews may be missed.")
-            Row { Checkbox(enabled, { enabled = it; prefs.edit().putBoolean("enabled", it).apply() }); Text("Enable local monitoring") }
+            Text(if (!enabled) "Monitoring paused — enable it in Settings" else if (!accessGranted.value) "Notification access needed — open Settings" else "Monitoring selected apps on this phone")
+            Text("Each warning belongs to a specific message. Review the message and reasons before acting.")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Messages", "Check", "Settings").forEach { tab -> TextButton(onClick = { screen = tab }) { Text(if (screen == tab) "[$tab]" else tab) } }
+            }
+            if (screen == "Messages") {
+                Text("Flagged messages", style = MaterialTheme.typography.headlineSmall)
+                selected?.let { FindingView(it, true) }
+                if (selectedId.value > 0 && selected == null) Text("This message is no longer available. It may have expired or been deleted.")
+                if (history.isEmpty()) Text("No flagged messages yet. Only new messages received while monitoring is enabled are checked.")
+                history.forEach { item ->
+                    Card(onClick = { selectedId.value = item.id }, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) { FindingView(item, false) }
+                    }
+                }
+                Button(onClick = { scope.launch { dao.purge(Long.MAX_VALUE); selectedId.value = 0; getSystemService(android.app.NotificationManager::class.java).cancelAll() } }) { Text("Delete message history") }
+            }
+            if (screen == "Settings") {
+            Text("Selected message previews are processed locally. Flagged messages and sender names are encrypted on this phone for 7 days so you can review each warning. Delete them at any time. Hidden previews may be missed. Nothing is sent online automatically.")
+            Text("Detection: OTIS English spam model plus context rules. Tamil and Tanglish use rules. No measured regional accuracy is claimed.")
+            Row { Checkbox(enabled, { enabled = it; prefs.edit().putBoolean("enabled", it).putLong("monitorSince", System.currentTimeMillis()).apply() }); Text("Enable local monitoring") }
             listOf("WhatsApp" to "com.whatsapp", "Telegram" to "org.telegram.messenger", "Google Messages" to "com.google.android.apps.messaging", "Samsung Messages" to "com.samsung.android.messaging").forEach { (name, pkg) ->
                 var checked by remember { mutableStateOf(prefs.getBoolean(pkg, false)) }
                 Row { Checkbox(checked, { checked = it; prefs.edit().putBoolean(pkg, it).apply() }); Text(name) }
             }
             Button(onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Grant notification access") }
             Button(onClick = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Allow warning notifications") }
+            }
+            if (screen == "Check") {
             Text("Share text or an image to PS2 from another app. Image OCR currently supports Latin text. Tamil image OCR requires a separate validated engine.")
             OutlinedTextField(incoming.value, { incoming.value = it.take(8000) }, label = { Text("Text to check") }, modifier = Modifier.fillMaxWidth())
-            Button(onClick = {
-                result = Detection.analyze(incoming.value)
+            Button(enabled = !checking && incoming.value.isNotBlank(), onClick = {
+                val checkedText = incoming.value
+                checking = true
+                scope.launch {
+                    val checked = withContext(Dispatchers.Default) { Detection.analyze(checkedText, SpamModel.score(this@MainActivity, checkedText)) }
+                    if (incoming.value == checkedText) result = checked
+                    checking = false
+                }
                 val url = Detection.urls(incoming.value).firstOrNull()?.let(Detection::safeUrl)
                 kind = if (url == null) "claim" else "url"
                 query = url ?: Detection.redact(incoming.value)
-            }) { Text("Check locally") }
-            result?.let { Text(it.verdict, style = MaterialTheme.typography.headlineSmall); Text(it.reasons.joinToString("\n")); Text(it.advice) }
+            }) { Text(if (checking) "Checking…" else "Check this message") }
+            result?.let { Text(it.verdict, style = MaterialTheme.typography.headlineSmall); Text(it.reasons.joinToString("\n")); Text(it.advice); Text(it.model) }
             Text("Optional online verification", style = MaterialTheme.typography.titleLarge)
             Text(if (endpoint.isBlank()) "Online verification is not connected. Local checks work without it." else "Online verification configured for this session.")
             TextButton(onClick = { settings = !settings }) { Text("Connection settings") }
@@ -163,9 +204,24 @@ class MainActivity : ComponentActivity() {
                 }
             }) { Text(if (busy) "Checking…" else "Consent and verify this query") }
             if (response.isNotBlank()) Text(response)
-            Text("Recent local warnings", style = MaterialTheme.typography.titleLarge)
-            history.forEach { Text("${it.verdict}: ${it.reasons}") }
-            Button(onClick = { scope.launch { withContext(Dispatchers.IO) { Store.get(this@MainActivity).findings().purge(Long.MAX_VALUE) }; history = emptyList() } }) { Text("Delete local history") }
+            }
+        }
+    }
+    @Composable private fun FindingView(item: Finding, full: Boolean) {
+        val payload = remember(item.payload) { JSONObject(PrivateMessages.decrypt(item.payload)) }
+        val scope = rememberCoroutineScope()
+        Text(item.verdict, style = MaterialTheme.typography.titleLarge)
+        Text("${payload.optString("source", "Previous version")} · ${payload.optString("sender", "Unknown sender")}")
+        Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(item.time)))
+        Text(payload.optString("text", "Message content was not retained by the previous app version."), maxLines = if (full) Int.MAX_VALUE else 3)
+        if (full) {
+            Text("Why this message was flagged", style = MaterialTheme.typography.titleMedium)
+            Text(item.reasons)
+            Text(item.advice)
+            Text(payload.optString("model"))
+            Text("This is a risk warning, not a confirmed fraud verdict.")
+            TextButton(onClick = { scope.launch { Store.get(this@MainActivity).findings().feedback(item.id, "not_scam") } }) { Text(if (item.feedback == "not_scam") "Marked as not a scam" else "Mark as not a scam") }
+            Text("Feedback stays on your phone and does not automatically retrain the model.")
         }
     }
 }

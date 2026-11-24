@@ -1,0 +1,10 @@
+Model: Titeiiko/OTIS-Official-Spam-Model
+Upstream revision: 2586e3df31d9ba3643392b1d761e733eb1055e4d
+License: BSD-3-Clause; upstream copyright notice bundled in APK assets.
+Architecture: BERT, 2 transformer layers, hidden dimension 128; English spam classification.
+Labels: LABEL_0 not spam, LABEL_1 spam according to the publisher's example.
+PS2 export: variable sequence lengths, ONNX opset 17, maximum 128 tokens.
+Use: supporting signal, not a calibrated fraud probability. Scores do not add verdicts; the initial proposed threshold was rejected during evaluation. Explicit fraud-context rules operate separately. Non-ASCII and recognized Tanglish inputs skip the model. English vs Tanglish language detection is incomplete.
+Evaluation limits: curated regression examples and output/tokenizer parity checks only. No representative independent regional benchmark, recall/precision targets or battery targets have been met or claimed. The model can misclassify legitimate promotions as spam and can miss new scams.
+
+Evaluation found serious false positives: the model assigns high spam scores to hi, a legitimate OTP safety notice and a catalogue link. Therefore model scores do NOT create warnings or change verdicts. Context rules decide alerts. The model runs as advisory evidence only. Do not claim it improves fraud accuracy.
