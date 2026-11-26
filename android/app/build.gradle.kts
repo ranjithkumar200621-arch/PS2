@@ -7,12 +7,13 @@ plugins {
 android {
     namespace = "com.godvalley.ps2"
     compileSdk = 35
-    defaultConfig { applicationId = "com.godvalley.ps2"; minSdk = 26; targetSdk = 35; versionCode = 3; versionName = "0.2.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "com.godvalley.ps2"; minSdk = 26; targetSdk = 35; versionCode = 4; versionName = "0.3.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")

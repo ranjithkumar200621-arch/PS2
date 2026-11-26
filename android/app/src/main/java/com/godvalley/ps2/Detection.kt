@@ -36,7 +36,7 @@ object Detection {
         val pay = has("\\b(pay|payment|transfer|deposit|fee|money)\\b|பணம்|கட்டணம்|panam|kattanam")
         val negative = "(?:never|do not|don't|dont|not to)"
         val directSecrets = text.split(Regex("[.!?\\n]")).any { sentence ->
-            !Regex("$negative.{0,20}(share|send|tell|give|disclose)").containsMatchIn(sentence) &&
+            !Regex("$negative.{0,20}(share|send|tell|give|disclose)|(அனுப்ப|பகிர|சொல்ல).{0,12}(வேண்டாம்|கூடாது|ாதீர்கள்)|anuppathe|sollathe|share.{0,12}(pannathe|koodathu)").containsMatchIn(sentence) &&
                 Regex("\\b(share|send|tell|give|disclose)\\b.{0,45}\\b(otp|pin|password|verification code)\\b|\\b(otp|pin|password)\\b.{0,25}(அனுப்பு|பகிர|anuppu|sollu)").containsMatchIn(sentence)
         }
         val reasons = mutableListOf<String>()

@@ -13,6 +13,14 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class DeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    @Test fun tamilScreenshotProducesTamilText() {
+        val bitmap=android.graphics.Bitmap.createBitmap(1800,240,android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas=android.graphics.Canvas(bitmap);canvas.drawColor(android.graphics.Color.WHITE)
+        val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.BLACK; textSize=90f }
+        canvas.drawText("உங்கள் OTP உடனே அனுப்பு",30f,150f,paint)
+        try { val text=TamilOcr.read(context,bitmap); assertTrue("Tamil text expected: $text", text.any { it.code in 0x0B80..0x0BFF }) }
+        finally { bitmap.recycle() }
+    }
     @Test fun encryptedMessageRoundTrip() {
         val raw = "hi from sender; OTP 123456"
         val encrypted = PrivateMessages.encrypt(raw)

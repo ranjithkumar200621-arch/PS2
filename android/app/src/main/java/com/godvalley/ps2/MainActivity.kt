@@ -55,22 +55,28 @@ class MainActivity : ComponentActivity() {
         if (uri == null || uri.scheme != "content") return
         lifecycleScope.launch {
             try {
-                val image = withContext(Dispatchers.IO) {
+                val bitmap = withContext(Dispatchers.IO) {
                     val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, options) }
                     require(options.outWidth > 0 && options.outHeight > 0)
                     options.inSampleSize = generateSequence(1) { it * 2 }.first { options.outWidth / it <= 2048 && options.outHeight / it <= 2048 }
                     options.inJustDecodeBounds = false
                     val bitmap = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, options) } ?: error("Unreadable image")
-                    InputImage.fromBitmap(bitmap, 0)
+                    bitmap
                 }
+                val image = InputImage.fromBitmap(bitmap, 0)
                 val qr = BarcodeScanning.getClient()
                 val ocr = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 try {
                     val codes = qr.process(image).await().mapNotNull { it.rawValue }
-                    incoming.value = codes.firstOrNull { it.startsWith("upi://", true) }
-                        ?: (codes.joinToString("\n") + "\n" + ocr.process(image).await().text).take(8000)
-                } finally { qr.close(); ocr.close() }
+                    val payment = codes.firstOrNull { it.startsWith("upi://", true) }
+                    if (payment != null) incoming.value = payment else {
+                        val latin = ocr.process(image).await().text
+                        val regional = withContext(Dispatchers.Default) { runCatching { TamilOcr.read(this@MainActivity, bitmap) }.getOrDefault("") }
+                        val extracted = if (regional.any { it.code in 0x0B80..0x0BFF }) regional else latin.ifBlank { regional }
+                        incoming.value = (codes.joinToString("\n") + "\n" + extracted).trim().take(8000)
+                    }
+                } finally { qr.close(); ocr.close(); bitmap.recycle() }
             } catch (_: Exception) { incoming.value = "Image could not be read. Try a smaller screenshot or share text." }
         }
     }
@@ -129,7 +135,7 @@ class MainActivity : ComponentActivity() {
             Button(onClick = { if (Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Allow warning notifications") }
             }
             if (screen == "Check") {
-            Text("Share text or an image to PS2 from another app. Image OCR currently supports Latin text. Tamil image OCR requires a separate validated engine.")
+            Text("Share text or an image to PS2 from another app. Tamil and English OCR run on this phone. Check the extracted text for recognition errors before analyzing it.")
             OutlinedTextField(incoming.value, { incoming.value = it.take(8000) }, label = { Text("Text to check") }, modifier = Modifier.fillMaxWidth())
             Button(enabled = !checking && incoming.value.isNotBlank(), onClick = {
                 val checkedText = incoming.value

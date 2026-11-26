@@ -1,3 +1,7 @@
+## Version 0.3.0 screenshot update
+
+Shared screenshots can be read offline in Tamil and English. PS2 runs Tesseract for Tamil and mixed text, keeps ML Kit for Latin text, and shows the extracted text for review before checking it. QR payment handling remains separate. Tamil and Tanglish warnings now recognize common phrases advising people against sharing an OTP. OCR can misread images, and the regional scam rules still need a representative accuracy evaluation. Hosting and API setup remain separate.
+
 ## Version 0.2.1 verification update
 
 The backend now retrieves RDAP domain registration dates from registry endpoints in a bundled IANA bootstrap snapshot. It does not visit the submitted website. COM/NET subdomains resolve to their registry domain; other suffixes use the exact submitted host and may return unavailable. Dates never change a fraud verdict. Registry requests are limited to two seconds and evidence responses to 256 KiB. Redirects are rejected. The Android result screen displays the available dates and limitations.

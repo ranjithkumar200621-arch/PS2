@@ -4,6 +4,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DetectionTest {
+    @Test fun regionalOtpSafetyNoticeDoesNotWarn() {
+        for (text in listOf("OTP யாரிடமும் பகிர வேண்டாம்", "otp anuppathe", "otp share panna koodathu")) assertFalse(text, Detection.analyze(text).warns)
+    }
     @Test fun greetingsNeverWarn() { for (text in listOf("hi", "Hi!", "hello", "வணக்கம்", "vanakkam")) assertFalse(text, Detection.analyze(text).warns) }
     @Test fun bankSafetyNoticeDoesNotWarn() { assertFalse(Detection.analyze("Your OTP is 123456. Never share it with anyone.").warns) }
     @Test fun urgentKycLinkWarns() { assertTrue(Detection.analyze("Urgent! Your bank account is blocked. Update KYC at https://example.com").warns) }
